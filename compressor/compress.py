@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -9,6 +10,7 @@ import ollama
 from compressor.preprocess import preprocess_text
 
 CompressionMode = Literal["lossless", "balanced", "aggressive"]
+DEFAULT_OLLAMA_MODEL = "qwen3:1.7b"
 
 
 MODE_INSTRUCTIONS: dict[CompressionMode, str] = {
@@ -51,6 +53,13 @@ class OllamaStatus:
     available_models: list[str]
 
 
+MODE_TOKEN_LIMITS: dict[CompressionMode, int] = {
+    "lossless": 160,
+    "balanced": 96,
+    "aggressive": 64,
+}
+
+
 def build_compression_prompt(text: str, mode: CompressionMode) -> str:
     instruction = MODE_INSTRUCTIONS[mode]
     return (
@@ -71,7 +80,7 @@ def _find_ollama_binary() -> str | None:
         r"C:\Program Files\Ollama\ollama.exe",
     ]
     for path in common_paths:
-        if shutil.which(path):
+        if os.path.exists(path):
             return path
     return None
 
@@ -105,32 +114,40 @@ def get_ollama_status() -> OllamaStatus:
         return OllamaStatus(installed=installed, running=False, available_models=[])
 
 
+def _run_ollama_chat(cleaned_text: str, mode: CompressionMode, model: str) -> Any:
+    return ollama.chat(
+        model=model,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": build_compression_prompt(cleaned_text, mode)},
+        ],
+        options={
+            "temperature": 0.1,
+            "num_predict": MODE_TOKEN_LIMITS[mode],
+            "num_ctx": 2048,
+        },
+        keep_alive="10m",
+    )
+
+
 def compress_prompt(
     text: str,
     mode: CompressionMode = "balanced",
-    model: str = "qwen3:4b",
+    model: str = DEFAULT_OLLAMA_MODEL,
 ) -> CompressionResult:
     cleaned_text = preprocess_text(text)
     if not cleaned_text:
         raise ValueError("Input text is empty after preprocessing.")
 
     try:
-        response = ollama.chat(
-            model=model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": build_compression_prompt(cleaned_text, mode)},
-            ],
-            options={"temperature": 0.2},
-        )
+        response = _run_ollama_chat(cleaned_text, mode, model)
     except Exception as exc:  # pragma: no cover - depends on local Ollama runtime
         status = get_ollama_status()
-        if not status.installed:
-            raise CompressionError(
-                "Ollama does not appear to be installed or available on PATH. "
-                "Install Ollama locally, start it, then pull the model you want to use."
-            ) from exc
         if not status.running:
+            if not status.installed:
+                raise CompressionError(
+                    "Ollama is not reachable from this app. Install it or make sure its local API is running, then retry."
+                ) from exc
             raise CompressionError(
                 "Ollama appears to be installed but the local runtime is not responding on its API. "
                 "Start Ollama, then retry."

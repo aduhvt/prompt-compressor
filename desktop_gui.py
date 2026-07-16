@@ -17,6 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import compressor.compress as compress_module
 from compressor.similarity import DEFAULT_SIMILARITY_MODEL, calculate_similarity
 from compressor.token_counter import compare_token_counts
+from compressor.updater import APP_VERSION, AppUpdater, cleanup_old_executable
 
 # Types and Defaults
 CompressionError = compress_module.CompressionError
@@ -55,7 +56,7 @@ class PromptCompressorApp(ctk.CTk):
         self.title_label.grid(row=0, column=0, padx=20, pady=(20, 5), sticky="w")
 
         self.subtitle_label = ctk.CTkLabel(
-            self.sidebar_frame, text="Offline LLM Engine", font=ctk.CTkFont(size=12, slant="italic")
+            self.sidebar_frame, text=f"Offline LLM Engine (v{APP_VERSION})", font=ctk.CTkFont(size=12, slant="italic")
         )
         self.subtitle_label.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="w")
 
@@ -225,9 +226,81 @@ class PromptCompressorApp(ctk.CTk):
         # Initial check
         self.last_result = None
         self.after(500, self.check_ollama)
+        self.after(1000, self.check_for_updates)
 
     def change_appearance(self, new_mode: str) -> None:
         ctk.set_appearance_mode(new_mode)
+
+    def check_for_updates(self) -> None:
+        self.updater = AppUpdater(
+            current_version=APP_VERSION,
+            on_update_available=self.show_update_prompt,
+            on_progress=self.update_download_progress,
+            on_error=self.on_update_error,
+            on_success=self.on_update_success,
+        )
+        self.updater.start_check()
+
+    def show_update_prompt(self, version: str, download_url: str) -> None:
+        self.after(0, lambda: self._prompt_update(version))
+
+    def _prompt_update(self, version: str) -> None:
+        answer = messagebox.askyesno(
+            "Update Available",
+            f"A new version ({version}) of Prompt Compressor is available.\n\n"
+            "Would you like to download and install it now?\n"
+            "The application will restart automatically after the update."
+        )
+        if answer:
+            self.show_progress_dialog()
+            self.updater.start_download()
+
+    def show_progress_dialog(self) -> None:
+        self.update_win = ctk.CTkToplevel(self)
+        self.update_win.title("Updating Prompt Compressor")
+        self.update_win.geometry("400x150")
+        self.update_win.resizable(False, False)
+        
+        # Center the window relative to parent
+        self.update_win.transient(self)
+        self.update_win.grab_set()
+
+        lbl = ctk.CTkLabel(
+            self.update_win,
+            text="Downloading update from GitHub...",
+            font=ctk.CTkFont(size=13, weight="bold")
+        )
+        lbl.pack(pady=(20, 10))
+
+        self.update_progress = ctk.CTkProgressBar(self.update_win, width=300)
+        self.update_progress.pack(pady=10)
+        self.update_progress.set(0)
+
+        self.update_pct_lbl = ctk.CTkLabel(self.update_win, text="0%")
+        self.update_pct_lbl.pack(pady=(0, 10))
+
+    def update_download_progress(self, progress: float) -> None:
+        self.after(0, lambda: self._set_progress(progress))
+
+    def _set_progress(self, progress: float) -> None:
+        if hasattr(self, 'update_progress'):
+            self.update_progress.set(progress)
+            self.update_pct_lbl.configure(text=f"{int(progress * 100)}%")
+
+    def on_update_error(self, error_msg: str) -> None:
+        self.after(0, lambda: self._handle_update_error(error_msg))
+
+    def _handle_update_error(self, error_msg: str) -> None:
+        if hasattr(self, 'update_win') and self.update_win.winfo_exists():
+            self.update_win.destroy()
+        messagebox.showerror(
+            "Update Error",
+            f"An error occurred while downloading the update:\n{error_msg}"
+        )
+
+    def on_update_success(self) -> None:
+        if hasattr(self, 'update_win') and self.update_win.winfo_exists():
+            self.update_win.destroy()
 
     def check_ollama(self) -> None:
         def task():
@@ -399,5 +472,6 @@ class PromptCompressorApp(ctk.CTk):
 
 
 if __name__ == "__main__":
+    cleanup_old_executable()
     app = PromptCompressorApp()
     app.mainloop()

@@ -8,9 +8,12 @@ from typing import Any
 
 from compressor.preprocess import preprocess_text
 
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(MODULE_DIR)
+
 DEFAULT_SIMILARITY_MODEL = os.getenv(
     "SIMILARITY_MODEL",
-    os.path.join("models", "sentence-transformers", "all-MiniLM-L6-v2"),
+    os.path.join(PROJECT_ROOT, "models", "sentence-transformers", "all-MiniLM-L6-v2"),
 )
 
 
@@ -54,6 +57,9 @@ def calculate_similarity(
     compressed = preprocess_text(compressed_text)
     if not original or not compressed:
         return SimilarityResult(score=0.0, method="empty-input")
+
+    if not os.path.isdir(model_name_or_path):
+        return _fallback_similarity(original, compressed)
 
     try:
         model = _load_model(model_name_or_path)

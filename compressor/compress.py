@@ -127,6 +127,7 @@ def _run_ollama_chat(cleaned_text: str, mode: CompressionMode, model: str) -> An
             "num_ctx": 2048,
         },
         keep_alive="10m",
+        think=False,
     )
 
 

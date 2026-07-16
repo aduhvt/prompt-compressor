@@ -16,7 +16,13 @@ if (-not (Test-Path $python)) {
   --name "PromptCompressor" `
   --add-data "compressor;compressor" `
   --collect-all customtkinter `
-  --copy-metadata sentence-transformers `
+  --exclude-module torch `
+  --exclude-module numpy `
+  --exclude-module sentence_transformers `
+  --exclude-module transformers `
+  --exclude-module scipy `
+  --exclude-module pandas `
+  --exclude-module pyarrow `
   desktop_gui.py
 
 Write-Host ""

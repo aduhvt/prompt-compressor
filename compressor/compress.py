@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import ollama
 
@@ -61,19 +61,46 @@ def build_compression_prompt(text: str, mode: CompressionMode) -> str:
     )
 
 
+def _find_ollama_binary() -> str | None:
+    candidate = shutil.which("ollama")
+    if candidate:
+        return candidate
+
+    common_paths = [
+        r"C:\Users\Avdhut\AppData\Local\Programs\Ollama\ollama.exe",
+        r"C:\Program Files\Ollama\ollama.exe",
+    ]
+    for path in common_paths:
+        if shutil.which(path):
+            return path
+    return None
+
+
+def _extract_models(response: Any) -> list[str]:
+    raw_models = getattr(response, "models", None)
+    if raw_models is None and isinstance(response, dict):
+        raw_models = response.get("models", [])
+    if raw_models is None:
+        return []
+
+    models: set[str] = set()
+    for model in raw_models:
+        if isinstance(model, dict):
+            name = model.get("model") or model.get("name")
+        else:
+            name = getattr(model, "model", None) or getattr(model, "name", None)
+        if name:
+            models.add(str(name))
+    return sorted(models)
+
+
 def get_ollama_status() -> OllamaStatus:
-    installed = shutil.which("ollama") is not None
+    installed = _find_ollama_binary() is not None
 
     try:
         response = ollama.list()
-        models = sorted(
-            {
-                model.get("model") or model.get("name")
-                for model in response.get("models", [])
-                if model.get("model") or model.get("name")
-            }
-        )
-        return OllamaStatus(installed=installed, running=True, available_models=models)
+        models = _extract_models(response)
+        return OllamaStatus(installed=True, running=True, available_models=models)
     except Exception:
         return OllamaStatus(installed=installed, running=False, available_models=[])
 

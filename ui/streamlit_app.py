@@ -30,6 +30,10 @@ def render_header() -> None:
 def render_sidebar() -> tuple[str, str]:
     with st.sidebar:
         st.header("Settings")
+        status = get_ollama_status()
+        default_model = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+        if status.available_models:
+            default_model = status.available_models[0]
         mode = st.selectbox(
             "Compression mode",
             options=["lossless", "balanced", "aggressive"],
@@ -38,7 +42,7 @@ def render_sidebar() -> tuple[str, str]:
         )
         model = st.text_input(
             "Ollama model",
-            value=os.getenv("OLLAMA_MODEL", "qwen3:4b"),
+            value=default_model,
             help="This model must exist in your local Ollama installation.",
         )
         st.markdown("**Similarity model path**")
